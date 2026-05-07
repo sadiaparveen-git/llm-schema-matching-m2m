@@ -7,11 +7,19 @@ from typing import List, Tuple
 
 
 class MatchType(StrEnum):
-    oneToOne = "one_to_one"
-    manyToOne = "many_to_one"
+    one_to_one = "one_to_one"
+    one_to_many = "one_to_many"
+    many_to_one = "many_to_one"
+    many_to_many = "many_to_many"
 
 
 class RelationshipType(StrEnum):
+    """Semantic relationship labels from updated_ground_truth.csv.
+
+    Documentation only — these labels are NOT predicted by the LLM and NOT
+    compared against ground truth during evaluation. The enum exists solely to
+    parse and validate the CSV's `relationship` column.
+    """
     corresponds = "corresponds"
     copied_as_source_value = "copied_as_source_value"
     linked_via_person_source_value_to_person_id = "linked_via_person_source_value_to_person_id"
@@ -30,7 +38,8 @@ class RelationshipType(StrEnum):
 
 
 @dataclass
-class GTEntry:
+class GTOneToOneEntry:
+    """A 1:1 ground truth entry. Match type is implicit (always one_to_one)."""
     source: str
     target: str
     relationship: RelationshipType
@@ -38,14 +47,17 @@ class GTEntry:
 
 @dataclass
 class GTGroupEntry:
+    """A non-1:1 ground truth entry: one_to_many, many_to_one, or many_to_many."""
     sources: List[str]
-    target: str
+    targets: List[str]
+    match_type: MatchType
     relationship: RelationshipType
 
 
-# CamelCase OMOP relation name → underscore-separated name used in schema documentation.
-# Applied to the relation-name segment of every target path during loading.
-# Any CamelCase token NOT listed here triggers a ValueError at load time.
+# CamelCase OMOP relation name → underscore-separated name used in
+# actual-repo/schema_documentations/. Applied to the relation-name segment of
+# every source AND target path during loading. Any CamelCase token NOT listed
+# here triggers a ValueError at load time.
 OMOP_NAME_NORMALIZATION = {
     "VisitOccurrence": "Visit_Occurrence",
     "DrugExposure": "Drug_Exposure",
@@ -56,67 +68,71 @@ OMOP_NAME_NORMALIZATION = {
 
 
 def _is_camel_case(token: str) -> bool:
-    """Return True if token is CamelCase: no underscores and has uppercase after position 0."""
+    """True if token is CamelCase: no underscores and has uppercase after position 0."""
     return "_" not in token and any(c.isupper() for c in token[1:])
 
 
-def _normalize_target(target: str) -> str:
-    """Normalize the relation-name segment in an OMOP target path.
+def _normalize_relation_path(path: str) -> str:
+    """Apply OMOP_NAME_NORMALIZATION to the relation-name segment of a dotted path.
 
     Input:  'OMOP.VisitOccurrence.person_id'
     Output: 'OMOP.Visit_Occurrence.person_id'
+
+    Paths that don't match the SCHEMA.Relation.attribute shape are returned
+    unchanged. Single-word relation names (e.g., 'Person', 'Patients') pass
+    through. CamelCase relation names not in the map raise ValueError.
     """
-    parts = target.split(".")
+    parts = path.split(".")
     if len(parts) != 3:
-        return target
+        return path
     schema, relation, attribute = parts
     if _is_camel_case(relation):
         if relation not in OMOP_NAME_NORMALIZATION:
             raise ValueError(
-                f"Unmapped CamelCase OMOP relation name {relation!r} in target {target!r}. "
+                f"Unmapped CamelCase relation name {relation!r} in path {path!r}. "
                 f"Add it to OMOP_NAME_NORMALIZATION in ground_truth.py."
             )
         relation = OMOP_NAME_NORMALIZATION[relation]
     return f"{schema}.{relation}.{attribute}"
 
 
-def load_updated_ground_truth(path: str) -> Tuple[List[GTEntry], List[GTGroupEntry]]:
-    """Load updated_ground_truth.csv and return (one_to_one entries, many_to_one entries).
+def load_updated_ground_truth(path: str) -> Tuple[List[GTOneToOneEntry], List[GTGroupEntry]]:
+    """Load updated_ground_truth.csv and return (one-to-one entries, group entries).
 
-    Normalizations applied:
-    - 'ont_to_one' typo → 'one_to_one'
-    - '+'-delimited sources split for many_to_one rows only
-    - CamelCase OMOP relation names mapped via OMOP_NAME_NORMALIZATION
+    Behavior:
+    - The `type` column drives classification by MatchType.
+    - For non-one_to_one rows (one_to_many, many_to_one, many_to_many), both the
+      `source` and `target` columns are split on '+' to yield individual attribute
+      paths. one_to_one rows are stored verbatim (no splitting).
+    - OMOP_NAME_NORMALIZATION is applied to the relation-name segment of every
+      source and target path. An unmapped CamelCase token raises ValueError.
+    - No typo normalization is performed; the CSV is assumed clean.
     """
-    one_to_one: List[GTEntry] = []
-    many_to_one: List[GTGroupEntry] = []
+    one_to_one: List[GTOneToOneEntry] = []
+    groups: List[GTGroupEntry] = []
 
     with open(path, newline="", encoding="utf-8") as fh:
         reader = csv.DictReader(fh)
         for row in reader:
-            raw_type = row["type"].strip()
-            # Defensive normalization of known typo
-            if raw_type == "ont_to_one":
-                raw_type = "one_to_one"
-
-            match_type = MatchType(raw_type)
+            match_type = MatchType(row["type"].strip())
             source_raw = row["source"].strip()
             target_raw = row["target"].strip()
             relationship = RelationshipType(row["relationship"].strip())
-            normalized_target = _normalize_target(target_raw)
 
-            if match_type == MatchType.manyToOne:
-                sources = [s.strip() for s in source_raw.split("+")]
-                many_to_one.append(GTGroupEntry(
-                    sources=sources,
-                    target=normalized_target,
+            if match_type == MatchType.one_to_one:
+                one_to_one.append(GTOneToOneEntry(
+                    source=_normalize_relation_path(source_raw),
+                    target=_normalize_relation_path(target_raw),
                     relationship=relationship,
                 ))
             else:
-                one_to_one.append(GTEntry(
-                    source=source_raw,
-                    target=normalized_target,
+                sources = [_normalize_relation_path(s.strip()) for s in source_raw.split("+")]
+                targets = [_normalize_relation_path(t.strip()) for t in target_raw.split("+")]
+                groups.append(GTGroupEntry(
+                    sources=sources,
+                    targets=targets,
+                    match_type=match_type,
                     relationship=relationship,
                 ))
 
-    return one_to_one, many_to_one
+    return one_to_one, groups

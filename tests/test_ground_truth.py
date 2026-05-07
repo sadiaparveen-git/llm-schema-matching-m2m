@@ -10,10 +10,11 @@ import pytest
 from ground_truth import (
     OMOP_NAME_NORMALIZATION,
     GTGroupEntry,
+    GTOneToOneEntry,
     MatchType,
     RelationshipType,
     _is_camel_case,
-    _normalize_target,
+    _normalize_relation_path,
     load_updated_ground_truth,
 )
 
@@ -21,149 +22,229 @@ from ground_truth import (
 GT_CSV = Path(__file__).parent.parent.parent / "updated_ground_truth.csv"
 
 
-# ---------------------------------------------------------------------------
-# Basic load tests
-# ---------------------------------------------------------------------------
-
-def test_load_returns_43_entries():
-    # The CSV has 43 data rows: 41 one_to_one + 2 many_to_one.
-    # (TECH_SPEC §4.3 originally estimated 42; the prepared CSV has one additional
-    # one-to-one entry covering the Services->VisitDetail pair.)
-    one_to_one, many_to_one = load_updated_ground_truth(str(GT_CSV))
-    assert len(one_to_one) == 41, f"Expected 41 one-to-one entries, got {len(one_to_one)}"
-    assert len(many_to_one) == 2, f"Expected 2 many-to-one entries, got {len(many_to_one)}"
-    assert len(one_to_one) + len(many_to_one) == 43
+def _read_raw_rows():
+    with open(GT_CSV, newline="", encoding="utf-8") as fh:
+        return list(csv.DictReader(fh))
 
 
 # ---------------------------------------------------------------------------
-# Typo normalization
+# Loader: count consistency
 # ---------------------------------------------------------------------------
 
-def test_ont_to_one_typo_normalized():
-    """Loader must convert 'ont_to_one' to 'one_to_one' without failing."""
+def test_loaded_total_equals_csv_row_count():
+    """Sum of returned entries across all match types equals the raw CSV row count."""
+    one_to_one, groups = load_updated_ground_truth(str(GT_CSV))
+    raw_rows = _read_raw_rows()
+    assert len(one_to_one) + len(groups) == len(raw_rows)
+
+
+def test_one_to_one_count_matches_csv():
+    """Number of GTOneToOneEntry returned equals the count of one_to_one CSV rows."""
+    one_to_one, _ = load_updated_ground_truth(str(GT_CSV))
+    csv_one_to_one = sum(1 for r in _read_raw_rows() if r["type"].strip() == "one_to_one")
+    assert len(one_to_one) == csv_one_to_one
+
+
+def test_group_counts_match_csv_per_match_type():
+    """Each non-1:1 match-type bucket size equals the CSV row count of that type."""
+    _, groups = load_updated_ground_truth(str(GT_CSV))
+    for mt in (MatchType.one_to_many, MatchType.many_to_one, MatchType.many_to_many):
+        csv_count = sum(1 for r in _read_raw_rows() if r["type"].strip() == mt.value)
+        loaded_count = sum(1 for g in groups if g.match_type == mt)
+        assert loaded_count == csv_count, f"count mismatch for {mt.value}"
+
+
+# ---------------------------------------------------------------------------
+# Match-type classification
+# ---------------------------------------------------------------------------
+
+def test_one_to_one_entries_are_correct_class():
+    """Every entry in the first list is a GTOneToOneEntry (implicit match_type = one_to_one)."""
+    one_to_one, _ = load_updated_ground_truth(str(GT_CSV))
+    for entry in one_to_one:
+        assert isinstance(entry, GTOneToOneEntry)
+
+
+def test_group_entries_have_valid_match_type():
+    """Every GTGroupEntry has match_type ∈ {one_to_many, many_to_one, many_to_many}."""
+    _, groups = load_updated_ground_truth(str(GT_CSV))
+    valid = {MatchType.one_to_many, MatchType.many_to_one, MatchType.many_to_many}
+    for entry in groups:
+        assert isinstance(entry, GTGroupEntry)
+        assert entry.match_type in valid, (
+            f"GTGroupEntry has unexpected match_type: {entry.match_type}"
+        )
+
+
+# ---------------------------------------------------------------------------
+# Source / target splitting per match type
+# ---------------------------------------------------------------------------
+
+def test_many_to_one_sources_split_into_list():
+    """many_to_one entries have multiple sources and exactly one target."""
+    _, groups = load_updated_ground_truth(str(GT_CSV))
+    m2o = [g for g in groups if g.match_type == MatchType.many_to_one]
+    assert len(m2o) >= 1, "Expected at least one many_to_one entry in the CSV"
+    for entry in m2o:
+        assert isinstance(entry.sources, list)
+        assert len(entry.sources) > 1, (
+            f"many_to_one sources should be split into >1 elements, got {entry.sources}"
+        )
+        assert len(entry.targets) == 1
+
+
+def test_one_to_many_targets_split_into_list_if_any():
+    """If any one_to_many entries exist, they have multiple targets and exactly one source."""
+    _, groups = load_updated_ground_truth(str(GT_CSV))
+    o2m = [g for g in groups if g.match_type == MatchType.one_to_many]
+    for entry in o2m:
+        assert len(entry.targets) > 1, (
+            f"one_to_many targets should be split into >1 elements, got {entry.targets}"
+        )
+        assert len(entry.sources) == 1
+
+
+def test_many_to_many_both_sides_split_if_any():
+    """If any many_to_many entries exist, both sources and targets are split."""
+    _, groups = load_updated_ground_truth(str(GT_CSV))
+    m2m = [g for g in groups if g.match_type == MatchType.many_to_many]
+    for entry in m2m:
+        assert len(entry.sources) > 1
+        assert len(entry.targets) > 1
+
+
+def test_synthetic_csv_covers_all_four_match_types():
+    """End-to-end: a synthetic CSV with all four match types is parsed correctly,
+    confirming the splitting logic works for one_to_many and many_to_many even
+    though the current real CSV may not contain such rows."""
     rows = [
-        {"type": "one_to_one", "source": "MIMIC.Patients.subject_id",
-         "relationship": "corresponds", "target": "OMOP.Person.person_source_value"},
-        # Row with the typo — target uses a single-word OMOP name (no normalization needed)
-        {"type": "ont_to_one", "source": "MIMIC.Transfers.careunit",
-         "relationship": "mapped_via_vocabulary", "target": "OMOP.Person.person_source_value"},
+        {"type": "one_to_one", "source": "MIMIC.Patients.gender",
+         "relationship": "corresponds",
+         "target": "OMOP.Person.gender_source_value"},
+        {"type": "one_to_many", "source": "MIMIC.Admissions.admission_type",
+         "relationship": "copied_as_source_value",
+         "target": "OMOP.Person.person_id + OMOP.Person.gender_source_value"},
+        {"type": "many_to_one",
+         "source": "MIMIC.Patients.anchor_year + MIMIC.Patients.anchor_age",
+         "relationship": "aggregation",
+         "target": "OMOP.Person.year_of_birth"},
+        {"type": "many_to_many",
+         "source": "MIMIC.Admissions.admittime + MIMIC.Admissions.dischtime",
+         "relationship": "cast_to_date",
+         "target": "OMOP.Person.gender_source_value + OMOP.Person.year_of_birth"},
     ]
-
     with tempfile.NamedTemporaryFile(mode="w", suffix=".csv", delete=False, newline="") as fh:
-        tmp_path = fh.name
+        tmp = fh.name
         writer = csv.DictWriter(fh, fieldnames=["type", "source", "relationship", "target"])
         writer.writeheader()
         writer.writerows(rows)
 
-    one_to_one, many_to_one = load_updated_ground_truth(tmp_path)
-    assert len(one_to_one) == 2, "Both rows should be loaded as one_to_one after typo fix"
-    assert len(many_to_one) == 0
-    # Verify no entry has the raw typo as its type
-    for entry in one_to_one:
-        # GTEntry has a RelationshipType; the MatchType processing succeeded if we got here
-        assert isinstance(entry.relationship, RelationshipType)
+    one_to_one, groups = load_updated_ground_truth(tmp)
+    assert len(one_to_one) == 1
+    assert len(groups) == 3
+
+    by_type = {g.match_type: g for g in groups}
+    assert MatchType.one_to_many in by_type
+    assert MatchType.many_to_one in by_type
+    assert MatchType.many_to_many in by_type
+
+    assert len(by_type[MatchType.one_to_many].sources) == 1
+    assert len(by_type[MatchType.one_to_many].targets) == 2
+
+    assert len(by_type[MatchType.many_to_one].sources) == 2
+    assert len(by_type[MatchType.many_to_one].targets) == 1
+
+    assert len(by_type[MatchType.many_to_many].sources) == 2
+    assert len(by_type[MatchType.many_to_many].targets) == 2
 
 
 # ---------------------------------------------------------------------------
-# OMOP normalization map coverage
+# OMOP normalization
 # ---------------------------------------------------------------------------
 
-def test_omop_map_covers_all_camel_case_relation_names():
-    """All CamelCase OMOP relation names in the GT must be keys in OMOP_NAME_NORMALIZATION."""
-    with open(GT_CSV, newline="", encoding="utf-8") as fh:
-        reader = csv.DictReader(fh)
-        camel_case_names: set[str] = set()
-        for row in reader:
-            target = row["target"].strip()
-            parts = target.split(".")
-            if len(parts) == 3:
-                relation = parts[1]
-                if _is_camel_case(relation):
-                    camel_case_names.add(relation)
+def test_omop_map_covers_all_camel_case_in_csv():
+    """Every CamelCase relation name in the CSV (source or target column) must
+    be a key in OMOP_NAME_NORMALIZATION."""
+    camel_case_names: set[str] = set()
+    for row in _read_raw_rows():
+        for col in ("source", "target"):
+            for path in row[col].split("+"):
+                parts = path.strip().split(".")
+                if len(parts) == 3 and _is_camel_case(parts[1]):
+                    camel_case_names.add(parts[1])
 
     unmapped = camel_case_names - set(OMOP_NAME_NORMALIZATION.keys())
     assert not unmapped, (
-        f"CamelCase OMOP relation names not in OMOP_NAME_NORMALIZATION: {unmapped}"
-    )
-    # Confirm the 5 expected names are all there
-    expected = {"VisitOccurrence", "DrugExposure", "ConditionOccurrence", "VisitDetail", "CareSite"}
-    assert camel_case_names == expected, (
-        f"Expected CamelCase names {expected}, found {camel_case_names}"
+        f"CamelCase relation names not in OMOP_NAME_NORMALIZATION: {unmapped}"
     )
 
 
-def test_loading_does_not_raise_for_any_target():
-    """Successful load proves all 9 relation pairs are handled without unmapped tokens."""
-    one_to_one, many_to_one = load_updated_ground_truth(str(GT_CSV))
-    all_targets = [e.target for e in one_to_one] + [ge.target for ge in many_to_one]
-    for target in all_targets:
-        parts = target.split(".")
-        assert len(parts) == 3
-        relation = parts[1]
-        # After normalization, no internal uppercase letters remain in relation names
-        assert not _is_camel_case(relation), (
-            f"CamelCase relation name survived normalization: {relation!r} in {target!r}"
-        )
+def test_no_camel_case_relation_names_after_loading():
+    """After loading, no relation-name segment in any source/target path is CamelCase."""
+    one_to_one, groups = load_updated_ground_truth(str(GT_CSV))
+
+    paths: list[str] = []
+    for e in one_to_one:
+        paths.extend([e.source, e.target])
+    for e in groups:
+        paths.extend(e.sources)
+        paths.extend(e.targets)
+
+    for path in paths:
+        parts = path.split(".")
+        if len(parts) == 3:
+            relation = parts[1]
+            assert not _is_camel_case(relation), (
+                f"CamelCase relation survived normalization: {relation!r} in {path!r}"
+            )
 
 
 def test_unmapped_camel_case_raises():
-    """An unmapped CamelCase OMOP relation name must raise ValueError."""
+    """An unmapped CamelCase OMOP relation name must raise ValueError at load time."""
     rows = [
         {"type": "one_to_one", "source": "MIMIC.Foo.bar",
          "relationship": "corresponds", "target": "OMOP.UnknownTable.some_col"},
     ]
     with tempfile.NamedTemporaryFile(mode="w", suffix=".csv", delete=False, newline="") as fh:
-        tmp_path = fh.name
+        tmp = fh.name
         writer = csv.DictWriter(fh, fieldnames=["type", "source", "relationship", "target"])
         writer.writeheader()
         writer.writerows(rows)
 
     with pytest.raises(ValueError, match="Unmapped CamelCase"):
-        load_updated_ground_truth(tmp_path)
+        load_updated_ground_truth(tmp)
 
 
 # ---------------------------------------------------------------------------
-# Many-to-one source lists
+# Enum membership: every CSV value must be a valid enum member
 # ---------------------------------------------------------------------------
 
-def test_many_to_one_source_lists():
-    one_to_one, many_to_one = load_updated_ground_truth(str(GT_CSV))
-    assert len(many_to_one) == 2
+def test_all_csv_match_type_values_are_valid_enum_members():
+    """Every distinct value in the CSV `type` column constructs a valid MatchType."""
+    csv_values = {row["type"].strip() for row in _read_raw_rows()}
+    for v in csv_values:
+        # Will raise ValueError if v is not a valid MatchType — proves coverage.
+        MatchType(v)
 
-    # Build a dict keyed by target attribute name for easy lookup
-    by_target: dict[str, GTGroupEntry] = {
-        ge.target.split(".")[-1]: ge for ge in many_to_one
-    }
 
-    # Entry 1: anchor_year + anchor_age -> year_of_birth
-    assert "year_of_birth" in by_target, "Missing year_of_birth many-to-one entry"
-    yob = by_target["year_of_birth"]
-    src_attrs = [s.split(".")[-1] for s in yob.sources]
-    assert set(src_attrs) == {"anchor_year", "anchor_age"}, (
-        f"Unexpected sources for year_of_birth: {src_attrs}"
-    )
-    assert yob.relationship == RelationshipType.aggregation
-
-    # Entry 2: subject_id + hadm_id -> visit_occurrence_id (Prescriptions -> DrugExposure)
-    assert "visit_occurrence_id" in by_target, "Missing visit_occurrence_id many-to-one entry"
-    vid = by_target["visit_occurrence_id"]
-    src_attrs2 = [s.split(".")[-1] for s in vid.sources]
-    assert set(src_attrs2) == {"subject_id", "hadm_id"}, (
-        f"Unexpected sources for visit_occurrence_id: {src_attrs2}"
-    )
-    assert vid.relationship == RelationshipType.linked_via_visit_source_value_to_visit_occurrence_id
+def test_all_csv_relationship_values_are_valid_enum_members():
+    """Every distinct value in the CSV `relationship` column constructs a valid RelationshipType."""
+    csv_values = {row["relationship"].strip() for row in _read_raw_rows()}
+    for v in csv_values:
+        RelationshipType(v)
 
 
 # ---------------------------------------------------------------------------
-# All 15 RelationshipType values present in loaded data
+# Direct unit checks for normalization helper
 # ---------------------------------------------------------------------------
 
-def test_all_15_relationship_types_present():
-    one_to_one, many_to_one = load_updated_ground_truth(str(GT_CSV))
-    found = {e.relationship for e in one_to_one} | {ge.relationship for ge in many_to_one}
-    all_types = set(RelationshipType)
-    missing = all_types - found
-    assert not missing, (
-        f"These RelationshipType values were not found in the loaded data: {missing}"
-    )
-    assert len(found) == 15, f"Expected 15 distinct relationship types, found {len(found)}"
+def test_normalize_relation_path_handles_known_camel_case():
+    assert (_normalize_relation_path("OMOP.VisitOccurrence.person_id")
+            == "OMOP.Visit_Occurrence.person_id")
+    assert (_normalize_relation_path("OMOP.DrugExposure.drug_concept_id")
+            == "OMOP.Drug_Exposure.drug_concept_id")
+    # Already-normalized and single-word relations pass through unchanged
+    assert (_normalize_relation_path("OMOP.Person.person_id")
+            == "OMOP.Person.person_id")
+    assert (_normalize_relation_path("OMOP.Care_Site.care_site_name")
+            == "OMOP.Care_Site.care_site_name")
