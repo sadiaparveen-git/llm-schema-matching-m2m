@@ -180,6 +180,7 @@ class Parameters:
     llm_model: str
     feedback: Feedback = field(default_factory=Feedback)
     meta: Dict[str, str] = field(default_factory=dict)
+    max_group_size: Optional[int] = None
 
     def digest(self) -> str:
         return hashlib.blake2s(
@@ -188,6 +189,7 @@ class Parameters:
                 + self.target_relation.digest()
                 + self.feedback.digest()
                 + self.llm_model
+                + str(self.max_group_size or "")
             ).encode()
         ).hexdigest()
 
@@ -199,6 +201,7 @@ class Parameters:
             llm_model=data.get("llm_model", ""),
             feedback=Feedback.from_dict(data.get("feedback", {})),
             meta=data.get("meta", {}),
+            max_group_size=data.get("max_group_size", None),
         )
 
     def to_dict(self) -> Dict[str, Any]:
