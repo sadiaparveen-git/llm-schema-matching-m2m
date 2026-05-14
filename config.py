@@ -16,6 +16,7 @@ config = {
     "MATCH_SCORE_THRESHOLD": float(os.environ.get("MATCH_SCORE_THRESHOLD", "0.5")),
     "QUERY_LLM": os.environ.get("QUERY_LLM", "True").lower() == "true",
     "OPENAI_N": int(os.environ.get("OPENAI_N", "3")),
+    "ANTHROPIC_N": int(os.environ.get("ANTHROPIC_N", "1")),
     "OPENAI_TEMPERATURE": float(os.environ.get("OPENAI_TEMPERATURE", "1.0")),
     "RESULTS_DIR": os.environ.get("RESULTS_DIR", "thesis-extension/results"),
     "TEMPLATE_DIR": os.environ.get("TEMPLATE_DIR", "thesis-extension/templates"),

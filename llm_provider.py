@@ -189,7 +189,7 @@ class AnthropicProvider(LLMProvider):
 
     async def send(self, messages: List[Dict], cfg: Dict) -> List[str]:
         model = cfg.get("model") or config["ANTHROPIC_MODEL"]
-        n = int(cfg.get("n", 1))
+        n = int(cfg.get("anthropic_n", cfg.get("n", 1)))
         logger.debug("Anthropic send: model=%s n=%d", model, n)
 
         system_text, normalized = self._prepare_messages(messages)

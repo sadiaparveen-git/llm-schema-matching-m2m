@@ -73,6 +73,17 @@ def schema_match(parameters: Parameters) -> Result:
         parameters,
         modes=[PromptDesign.oneToN, PromptDesign.nToOne],
     )
+    if len(prompts_p1) > 10:
+        logger.warning(
+            "Phase 1 generated %d prompts for %s->%s. "
+            "With ANTHROPIC_N=%d this means %d API calls. "
+            "Consider reducing ANTHROPIC_N for development.",
+            len(prompts_p1),
+            parameters.source_relation.name,
+            parameters.target_relation.name,
+            config["ANTHROPIC_N"],
+            len(prompts_p1) * config["ANTHROPIC_N"],
+        )
     answers_p1 = send_prompts(parameters, prompts_p1)
     result = postprocess_answers(parameters, answers_p1)
 

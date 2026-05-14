@@ -96,7 +96,8 @@ async def _send_one(provider: LLMProvider, prompt: Prompt) -> List[Answer]:
     messages: List[Dict] = prompt.prompt["messages"]
     cfg: Dict = {
         "model": prompt.prompt.get("model"),
-        "n": int(prompt.prompt.get("n", config["OPENAI_N"])),
+        "n": config["OPENAI_N"],
+        "anthropic_n": config["ANTHROPIC_N"],
         "temperature": float(prompt.prompt.get("temperature", config["OPENAI_TEMPERATURE"])),
     }
     provider_name = config["LLM_PROVIDER"]

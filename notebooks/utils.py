@@ -36,15 +36,18 @@ from models import Attribute, Relation, Side  # noqa: E402
 
 RELATION_PAIRS: List[Tuple[str, str, str, str]] = [
     ("Patients",      "MIMIC", "Person",               "OMOP"),
-    ("Admissions",    "MIMIC", "Visit_Occurrence",      "OMOP"),
-    ("Admissions",    "MIMIC", "Death",                 "OMOP"),
-    ("Prescriptions", "MIMIC", "Drug_Exposure",         "OMOP"),
-    ("Diagnoses_ICD", "MIMIC", "Condition_Occurrence",  "OMOP"),
-    ("Transfers",     "MIMIC", "Care_Site",             "OMOP"),
-    ("Transfers",     "MIMIC", "Visit_Detail",          "OMOP"),
-    ("Admissions",    "MIMIC", "Visit_Detail",          "OMOP"),
-    ("Services",      "MIMIC", "Visit_Detail",          "OMOP"),
 ]
+# RELATION_PAIRS: List[Tuple[str, str, str, str]] = [
+#     ("Patients",      "MIMIC", "Person",               "OMOP"),
+#     ("Admissions",    "MIMIC", "Visit_Occurrence",      "OMOP"),
+#     ("Admissions",    "MIMIC", "Death",                 "OMOP"),
+#     ("Prescriptions", "MIMIC", "Drug_Exposure",         "OMOP"),
+#     ("Diagnoses_ICD", "MIMIC", "Condition_Occurrence",  "OMOP"),
+#     ("Transfers",     "MIMIC", "Care_Site",             "OMOP"),
+#     ("Transfers",     "MIMIC", "Visit_Detail",          "OMOP"),
+#     ("Admissions",    "MIMIC", "Visit_Detail",          "OMOP"),
+#     ("Services",      "MIMIC", "Visit_Detail",          "OMOP"),
+# ]
 
 # ---------------------------------------------------------------------------
 # All MIMIC tables present in schema_documentations/
