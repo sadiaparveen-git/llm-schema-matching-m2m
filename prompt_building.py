@@ -4,6 +4,12 @@ build_prompts() renders the 1:1 prompt templates (oneToN, nToOne) following
 Marcel's attribute-iteration approach: one Prompt per source attribute for
 oneToN mode, one per target attribute for nToOne mode.
 
+build_m2m_prompts() renders the manyToMany template — one prompt per relation
+pair, presenting only residual (unresolved) attributes, injecting max_group_size.
+
+build_relatedness_prompts() renders the relationRelatedness template — one
+prompt per relation pair.
+
 System-role messages are passed through natively (not flattened to user role).
 """
 from __future__ import annotations
@@ -181,3 +187,125 @@ def _mode_to_template_name(mode: PromptDesign) -> str:
     if mode not in mapping:
         raise ValueError(f"No template registered for mode {mode!r}")
     return mapping[mode]
+
+
+def _render_relation_prompt(
+    parameters: Parameters,
+    template: List[Dict[str, str]],
+    extra_vars: Dict,
+) -> List[Dict[str, str]]:
+    """Render a relation-level template (not per-attribute-pair).
+
+    All messages rendered with the full parameters context plus any
+    extra_vars passed in (e.g., max_group_size).
+    """
+    env = Environment()
+    messages = []
+    for part in template:
+        rendered = env.from_string(part["content"]).render(
+            source_relation=parameters.source_relation,
+            target_relation=parameters.target_relation,
+            feedback=parameters.feedback,
+            **extra_vars,
+        )
+        if rendered:
+            messages.append({"role": part["role"], "content": rendered})
+    return messages
+
+
+def build_m2m_prompts(
+    parameters: Parameters,
+    residual_sources: List[Attribute],
+    residual_targets: List[Attribute],
+    max_group_size: int,
+) -> List[Prompt]:
+    """Build the many-to-many prompt for residual attributes.
+
+    One prompt per relation pair. Sets attr.included=True only for residual
+    attributes when rendering — all other attributes appear with included=False
+    so the Jinja {% if attr.included %} guard hides them.
+
+    Returns a list with exactly one Prompt.
+    """
+    template = _load_template("manyToMany")
+    model = _resolve_model(parameters)
+
+    residual_src_names = {a.name for a in residual_sources}
+    residual_tgt_names = {a.name for a in residual_targets}
+
+    # Build shallow-copy relations where only residual attrs are included.
+    import dataclasses
+
+    src_attrs = [
+        dataclasses.replace(a, included=(a.name in residual_src_names))
+        for a in parameters.source_relation.attributes
+    ]
+    tgt_attrs = [
+        dataclasses.replace(a, included=(a.name in residual_tgt_names))
+        for a in parameters.target_relation.attributes
+    ]
+
+    patched_src = dataclasses.replace(parameters.source_relation, attributes=src_attrs)
+    patched_tgt = dataclasses.replace(parameters.target_relation, attributes=tgt_attrs)
+    patched_params = dataclasses.replace(
+        parameters,
+        source_relation=patched_src,
+        target_relation=patched_tgt,
+    )
+
+    messages = _render_relation_prompt(
+        patched_params,
+        template,
+        extra_vars={"max_group_size": max_group_size},
+    )
+
+    prompt_dict: Dict = {
+        "model": model,
+        "temperature": config["OPENAI_TEMPERATURE"],
+        "messages": messages,
+        "n": config["OPENAI_N"],
+    }
+
+    return [
+        Prompt(
+            parameters=patched_params,
+            attributes=PromptAttributePair(
+                sources=residual_sources,
+                targets=residual_targets,
+            ),
+            prompt=prompt_dict,
+        )
+    ]
+
+
+def build_relatedness_prompts(parameters: Parameters) -> List[Prompt]:
+    """Build the relation-relatedness prompt.
+
+    One prompt per relation pair. All attributes are included as-is.
+    Returns a list with exactly one Prompt.
+    """
+    template = _load_template("relationRelatedness")
+    model = _resolve_model(parameters)
+
+    messages = _render_relation_prompt(parameters, template, extra_vars={})
+
+    prompt_dict: Dict = {
+        "model": model,
+        "temperature": config["OPENAI_TEMPERATURE"],
+        "messages": messages,
+        "n": config["OPENAI_N"],
+    }
+
+    included_sources = [a for a in parameters.source_relation.attributes if a.included]
+    included_targets = [a for a in parameters.target_relation.attributes if a.included]
+
+    return [
+        Prompt(
+            parameters=parameters,
+            attributes=PromptAttributePair(
+                sources=included_sources,
+                targets=included_targets,
+            ),
+            prompt=prompt_dict,
+        )
+    ]

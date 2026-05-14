@@ -1,0 +1,18 @@
+[
+  {
+    "role": "system",
+    "content": "Act as a data integration expert. Your task is to assess whether two database relations from different schemas are semantically related and should be candidates for attribute-level schema matching."
+  },
+  {
+    "role": "user",
+    "content": "Source relation: '{{source_relation.name}}'\nDescription: '{{source_relation.description}}'\nAttributes: {{source_relation.attributes | map(attribute='name') | join(', ')}}"
+  },
+  {
+    "role": "user",
+    "content": "Target relation: '{{target_relation.name}}'\nDescription: '{{target_relation.description}}'\nAttributes: {{target_relation.attributes | map(attribute='name') | join(', ')}}"
+  },
+  {
+    "role": "user",
+    "content": "Are these two relations semantically related? Would it make sense to map attributes between them in a data integration scenario?\n\nLet's think step by step. After your explanation, provide a JSON decision:\n```json\n{\"related\": true/false, \"confidence\": \"high\"/\"medium\"/\"low\", \"reasoning\": \"brief explanation\"}\n```"
+  }
+]

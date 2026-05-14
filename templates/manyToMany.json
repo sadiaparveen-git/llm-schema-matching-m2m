@@ -1,0 +1,18 @@
+[
+  {
+    "role": "system",
+    "content": "Act as a schema matcher for relational schemas. Your task is to identify groups of attributes from a source schema that jointly correspond to groups of attributes in a target schema. A group mapping exists when multiple source attributes together carry the semantic information needed to populate one or more target attributes, or when a single source attribute provides information for multiple target attributes. Consider: composite keys, aggregations (e.g., computing a value from two attributes), vocabulary-based standardizations, date/datetime casting, foreign key resolutions, and split/merged fields. You should find ALL match types: one-to-one (single source to single target), one-to-many (single source to multiple targets), many-to-one (multiple sources to single target), and many-to-many (multiple sources to multiple targets)."
+  },
+  {
+    "role": "user",
+    "content": "Source relation: '{{source_relation.name}}'\nDescription: '{{source_relation.description}}'\n\nSource attributes:\n{% for attr in source_relation.attributes %}{% if attr.included %}- '{{attr.name}}': {{attr.description}}\n{% endif %}{% endfor %}"
+  },
+  {
+    "role": "user",
+    "content": "Target relation: '{{target_relation.name}}'\nDescription: '{{target_relation.description}}'\n\nTarget attributes:\n{% for attr in target_relation.attributes %}{% if attr.included %}- '{{attr.name}}': {{attr.description}}\n{% endif %}{% endfor %}"
+  },
+  {
+    "role": "user",
+    "content": "Identify all groups of up to {{max_group_size}} source attributes that jointly map to groups of up to {{max_group_size}} target attributes. For each match, identify which of the four structural types applies:\n1. one_to_one: a single source attribute directly corresponds to a single target attribute (e.g., cast_to_date, copied_as_source_value, standardized_via_vocabulary)\n2. one_to_many: a single source attribute provides information for multiple target attributes (e.g., a source value copied directly AND mapped via vocabulary)\n3. many_to_one: multiple source attributes together are needed to populate a single target attribute (e.g., aggregation, composite key linking)\n4. many_to_many: multiple source attributes jointly correspond to multiple target attributes\n\nLet's work this out step by step to make sure we get it correct.\n\nAfter your explanation, give a final decision JSON-formatted like this:\n```json\n{\n  \"matches\": [\n    {\"source_group\": [\"attr1\"], \"target_group\": [\"attrA\", \"attrB\"], \"type\": \"one_to_many\", \"reasoning\": \"brief explanation\"},\n    {\"source_group\": [\"attr2\", \"attr3\"], \"target_group\": [\"attrC\"], \"type\": \"many_to_one\", \"reasoning\": \"brief explanation\"}\n  ]\n}\n```\nList only groups where you are confident a semantic correspondence exists. Omit groups where there is insufficient information. The 'reasoning' field is optional but helpful."
+  }
+]
