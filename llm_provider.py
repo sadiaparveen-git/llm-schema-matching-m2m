@@ -39,8 +39,8 @@ class ConfigurationError(RuntimeError):
 
 class LLMProvider(ABC):
     @abstractmethod
-    async def send(self, messages: List[Dict], cfg: Dict) -> List[str]:
-        """Send *messages* to the LLM and return a list of response strings.
+    async def send(self, messages: List[Dict], cfg: Dict) -> List[Tuple[str, int, int]]:
+        """Send *messages* to the LLM and return a list of (text, input_tokens, output_tokens).
 
         The list length equals cfg["n"].
         """
@@ -87,7 +87,7 @@ class OpenAIProvider(LLMProvider):
         model: str,
         n: int,
         temperature: float,
-    ) -> List[str]:
+    ) -> List[Tuple[str, int, int]]:
         async with self._semaphore:
             result = await self._client.chat.completions.create(
                 model=model,
@@ -95,9 +95,19 @@ class OpenAIProvider(LLMProvider):
                 n=n,
                 temperature=temperature,
             )
-        return [choice.message.content for choice in result.choices]
+        # OpenAI returns aggregate usage for all n completions combined.
+        # Assign real token counts to the first choice; zero to the rest so
+        # the total cost isn't overcounted when the caller sums across tuples.
+        input_tokens = result.usage.prompt_tokens if result.usage else 0
+        output_tokens = result.usage.completion_tokens if result.usage else 0
+        out: List[Tuple[str, int, int]] = []
+        for i, choice in enumerate(result.choices):
+            tok_in = input_tokens if i == 0 else 0
+            tok_out = output_tokens if i == 0 else 0
+            out.append((choice.message.content, tok_in, tok_out))
+        return out
 
-    async def send(self, messages: List[Dict], cfg: Dict) -> List[str]:
+    async def send(self, messages: List[Dict], cfg: Dict) -> List[Tuple[str, int, int]]:
         model = cfg.get("model") or config["OPENAI_MODEL"]
         n = int(cfg.get("n", config["OPENAI_N"]))
         temperature = float(cfg.get("temperature", config["OPENAI_TEMPERATURE"]))
@@ -175,7 +185,7 @@ class AnthropicProvider(LLMProvider):
         system: Optional[str],
         messages: List[Dict],
         model: str,
-    ) -> str:
+    ) -> Tuple[str, int, int]:
         kwargs: Dict = {
             "model": model,
             "messages": messages,
@@ -185,9 +195,11 @@ class AnthropicProvider(LLMProvider):
             kwargs["system"] = system
         async with self._semaphore:
             response = await self._client.messages.create(**kwargs)
-        return response.content[0].text
+        input_tokens = response.usage.input_tokens if response.usage else 0
+        output_tokens = response.usage.output_tokens if response.usage else 0
+        return (response.content[0].text, input_tokens, output_tokens)
 
-    async def send(self, messages: List[Dict], cfg: Dict) -> List[str]:
+    async def send(self, messages: List[Dict], cfg: Dict) -> List[Tuple[str, int, int]]:
         model = cfg.get("model") or config["ANTHROPIC_MODEL"]
         n = int(cfg.get("anthropic_n", cfg.get("n", 1)))
         logger.debug("Anthropic send: model=%s n=%d", model, n)
@@ -195,10 +207,11 @@ class AnthropicProvider(LLMProvider):
         system_text, normalized = self._prepare_messages(messages)
 
         if n == 1:
-            text = await self._call(system_text, normalized, model)
-            return [text]
+            tup = await self._call(system_text, normalized, model)
+            return [tup]
 
         # Anthropic has no native n parameter — fire n parallel requests.
+        # Each _call() returns its own (text, input_tokens, output_tokens).
         results = await asyncio.gather(
             *[self._call(system_text, normalized, model) for _ in range(n)]
         )

@@ -113,21 +113,10 @@ async def _send_one(provider: LLMProvider, prompt: Prompt) -> List[Answer]:
     )
 
     with LatencyTimer() as timer:
-        texts = await provider.send(messages, cfg)
-
-    cost_usd = provider.estimate_cost(0, 0, model)
-    storage_json.log_cost(
-        prompt_digest=prompt.digest(),
-        provider=provider_name,
-        model=model,
-        input_tokens=0,
-        output_tokens=0,
-        cost_usd=cost_usd,
-        latency_ms=timer.elapsed_ms,
-    )
+        responses = await provider.send(messages, cfg)
 
     answers: List[Answer] = []
-    for i, text in enumerate(texts):
+    for i, (text, input_tok, output_tok) in enumerate(responses):
         answer = Answer(attributes=prompt.attributes, answer=text, index=i, valid=False)
         try:
             extract_json(answer)
@@ -141,6 +130,17 @@ async def _send_one(provider: LLMProvider, prompt: Prompt) -> List[Answer]:
             )
         answers.append(answer)
         storage_json.store_answer(answer)
+
+        cost_usd = provider.estimate_cost(input_tok, output_tok, model)
+        storage_json.log_cost(
+            prompt_digest=prompt.digest(),
+            provider=provider_name,
+            model=model,
+            input_tokens=input_tok,
+            output_tokens=output_tok,
+            cost_usd=cost_usd,
+            latency_ms=timer.elapsed_ms,
+        )
 
     return answers
 
