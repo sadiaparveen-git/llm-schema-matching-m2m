@@ -1,15 +1,8 @@
-"""thesis-extension data model.
+"""Data model for llm-schema-matching-m2m.
 
-Dataclasses copied from demo-repo/utils/models.py with the following adaptations:
-- No RQ3 metadata fields on Attribute (no data_type/is_primary_key/sample_values).
-- Attribute is made hashable via digest-based __hash__/__eq__ (required by
-  FrozenSet[Attribute] in AttributeGroupPair). The field set is unchanged.
-- PromptAttributePair uses blake2s (Marcel's original used blake2b here) for
-  consistency with the rest of the model — see TECH_SPEC §4.1.
-- Result is extended with `group_pairs` and JSON serialization for it.
-
-New dataclasses appended: AttributeGroupPair, ResultGroupPair,
-RelationRelatednessResult, PromptDesign.
+Defines all dataclasses used throughout the pipeline: Attribute, Relation,
+Parameters, Prompt, Answer, Decision, ResultPair, AttributeGroupPair,
+ResultGroupPair, Result, RelationRelatednessResult, and PromptDesign.
 """
 from __future__ import annotations
 
@@ -27,7 +20,7 @@ if TYPE_CHECKING:
 
 
 # ---------------------------------------------------------------------------
-# Enums (copied from Marcel)
+# Enums
 # ---------------------------------------------------------------------------
 
 class Vote(StrEnum):
@@ -215,7 +208,7 @@ class Parameters:
 
 
 # ---------------------------------------------------------------------------
-# PromptAttributePair (blake2s instead of Marcel's blake2b — TECH_SPEC §4.1)
+# PromptAttributePair (uses blake2s for consistency with all other digest methods in this module)
 # ---------------------------------------------------------------------------
 
 @dataclass
@@ -387,7 +380,7 @@ class ResultPair:
 
 
 # ---------------------------------------------------------------------------
-# AttributeGroupPair (NEW)
+# AttributeGroupPair
 # ---------------------------------------------------------------------------
 
 @dataclass
@@ -395,7 +388,7 @@ class AttributeGroupPair:
     """A group of source attributes paired with a group of target attributes.
 
     `frozenset` is used so that equality and hashing are insertion-order
-    independent — see TECH_SPEC §4.1 D4.
+    independent.
     """
     sources: FrozenSet[Attribute]
     targets: FrozenSet[Attribute]
@@ -433,16 +426,12 @@ class AttributeGroupPair:
 
 
 # ---------------------------------------------------------------------------
-# ResultGroupPair (NEW)
+# ResultGroupPair
 # ---------------------------------------------------------------------------
 
 @dataclass
 class ResultGroupPair:
-    """Result container for a group match.
-
-    No `relationship` field: relationship-type labels in the ground truth are
-    documentation only and are never predicted by the LLM.
-    """
+    """Accumulates votes for a group match. Score is YES votes / total votes."""
     attributes: AttributeGroupPair
     votes: List[Decision] = field(default_factory=list)
     score: float = 0.0
@@ -470,7 +459,7 @@ class ResultGroupPair:
 
 
 # ---------------------------------------------------------------------------
-# Result (extended with group_pairs)
+# Result
 # ---------------------------------------------------------------------------
 
 @dataclass
@@ -537,7 +526,7 @@ class Result:
 
 
 # ---------------------------------------------------------------------------
-# RelationRelatednessResult (NEW — RQ2 pre-filter output)
+# RelationRelatednessResult
 # ---------------------------------------------------------------------------
 
 @dataclass
@@ -567,7 +556,7 @@ class RelationRelatednessResult:
 
 
 # ---------------------------------------------------------------------------
-# PromptDesign (NEW — only the modes thesis-extension uses)
+# PromptDesign — Prompt template modes supported by the pipeline.
 # ---------------------------------------------------------------------------
 
 class PromptDesign(StrEnum):
