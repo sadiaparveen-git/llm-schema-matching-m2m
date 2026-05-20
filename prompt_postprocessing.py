@@ -1,11 +1,13 @@
-"""Postprocessors for thesis-extension.
+"""Answer postprocessors.
 
-postprocess_answers()          — 1:1 / oneToN / nToOne vote aggregation
-                                  (adapted from Marcel's demo-repo logic)
-postprocess_m2m_answers()      — parses {"matches": [...]} JSON, populates
-                                  result.group_pairs
-postprocess_relatedness_answers() — parses {"related": bool, ...} JSON
+postprocess_answers() — 1:1 vote aggregation
+    for oneToN and nToOne modes
+postprocess_m2m_answers() — parses group match
+    JSON and populates result.group_pairs
+postprocess_relatedness_answers() — parses
+    relation relatedness JSON
 """
+
 from __future__ import annotations
 
 import json
@@ -35,11 +37,12 @@ logger = logging.getLogger(__name__)
 # JSON extraction helpers
 # ---------------------------------------------------------------------------
 
+
 def _extract_outermost_json(text: str) -> dict:
     """Extract the first (outermost) JSON object from *text*.
 
-    Marcel's extract_json uses rindex("{") which finds the innermost brace for
-    nested JSON.  This function instead finds the first "{" and matches it to
+    Unlike extract_json() which uses rindex("{") and finds the innermost brace,
+    this function finds the first "{" and matches it to
     its corresponding "}" via brace counting, so nested structures like
     {"matches": [...]} are extracted correctly.
     """
@@ -57,8 +60,9 @@ def _extract_outermost_json(text: str) -> dict:
 
 
 # ---------------------------------------------------------------------------
-# 1:1 postprocessor  (vote-aggregation adapted from Marcel's demo-repo)
+# 1:1 postprocessor
 # ---------------------------------------------------------------------------
+
 
 def postprocess_answers(
     parameters: Parameters,
@@ -85,13 +89,20 @@ def postprocess_answers(
 
     for answer in answers:
         if not is_valid_answer(answer):
-            logger.warning("Skipping invalid answer (no parseable JSON): %s", answer.digest()[:8])
+            logger.warning(
+                "Skipping invalid answer (no parseable JSON): %s",
+                answer.digest()[:8],
+            )
             continue
 
         try:
             parsed = extract_json(answer)
         except Exception:
-            logger.warning("JSON extraction failed for answer %s", answer.digest()[:8], exc_info=True)
+            logger.warning(
+                "JSON extraction failed for answer %s",
+                answer.digest()[:8],
+                exc_info=True,
+            )
             continue
 
         # Determine which side is the "single" side for this answer so we know
@@ -114,9 +125,13 @@ def postprocess_answers(
                         continue
                     pair = AttributePair(source=pivot_src, target=tgt)
                     if pair not in result.pairs:
-                        result.pairs[pair] = ResultPair(attributes=pair, votes=[])
+                        result.pairs[pair] = ResultPair(
+                            attributes=pair, votes=[]
+                        )
                     result.pairs[pair].votes.append(
-                        Decision(vote=vote_key, explanation=name, answer=answer)
+                        Decision(
+                            vote=vote_key, explanation=name, answer=answer
+                        )
                     )
         else:
             # nToOne: pivot is the single target; named attrs are sources
@@ -129,9 +144,13 @@ def postprocess_answers(
                         continue
                     pair = AttributePair(source=src, target=pivot_tgt)
                     if pair not in result.pairs:
-                        result.pairs[pair] = ResultPair(attributes=pair, votes=[])
+                        result.pairs[pair] = ResultPair(
+                            attributes=pair, votes=[]
+                        )
                     result.pairs[pair].votes.append(
-                        Decision(vote=vote_key, explanation=name, answer=answer)
+                        Decision(
+                            vote=vote_key, explanation=name, answer=answer
+                        )
                     )
 
     return result
@@ -140,6 +159,7 @@ def postprocess_answers(
 # ---------------------------------------------------------------------------
 # M:M postprocessor
 # ---------------------------------------------------------------------------
+
 
 def postprocess_m2m_answers(
     existing_result: Result,
@@ -180,7 +200,10 @@ def postprocess_m2m_answers(
 
         matches = parsed.get("matches", [])
         if not isinstance(matches, list):
-            logger.warning("M:M answer has non-list 'matches' field: %s", answer.digest()[:8])
+            logger.warning(
+                "M:M answer has non-list 'matches' field: %s",
+                answer.digest()[:8],
+            )
             continue
 
         for match in matches:
@@ -220,6 +243,7 @@ def postprocess_m2m_answers(
 # ---------------------------------------------------------------------------
 # Relatedness postprocessor
 # ---------------------------------------------------------------------------
+
 
 def postprocess_relatedness_answers(
     answers: List[Answer],

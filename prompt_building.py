@@ -12,6 +12,7 @@ prompt per relation pair.
 
 System-role messages are passed through natively (not flattened to user role).
 """
+
 from __future__ import annotations
 
 import dataclasses
@@ -31,10 +32,10 @@ from models import (
     PromptDesign,
 )
 
-
 # ---------------------------------------------------------------------------
 # Template loading (cached per process)
 # ---------------------------------------------------------------------------
+
 
 @functools.cache
 def _load_template(template_name: str) -> List[Dict[str, str]]:
@@ -47,6 +48,7 @@ def _load_template(template_name: str) -> List[Dict[str, str]]:
 # ---------------------------------------------------------------------------
 # Template iteration
 # ---------------------------------------------------------------------------
+
 
 def _template_iterator(
     template: List[Dict[str, str]],
@@ -75,6 +77,7 @@ def _template_iterator(
 # Single-prompt rendering
 # ---------------------------------------------------------------------------
 
+
 def _render_messages(
     sources: List[Attribute],
     targets: List[Attribute],
@@ -97,13 +100,16 @@ def _render_messages(
             feedback=parameters.feedback,
         )
         if rendered_content:
-            messages.append({"role": part["role"], "content": rendered_content})
+            messages.append(
+                {"role": part["role"], "content": rendered_content}
+            )
     return messages
 
 
 # ---------------------------------------------------------------------------
 # Model resolution
 # ---------------------------------------------------------------------------
+
 
 def _resolve_model(parameters: Parameters) -> str:
     if parameters.llm_model:
@@ -116,6 +122,7 @@ def _resolve_model(parameters: Parameters) -> str:
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
+
 
 def build_prompts(
     parameters: Parameters,
@@ -138,8 +145,12 @@ def build_prompts(
 
         source_card, target_card = mode.value.split("-")
 
-        included_sources = [a for a in parameters.source_relation.attributes if a.included]
-        included_targets = [a for a in parameters.target_relation.attributes if a.included]
+        included_sources = [
+            a for a in parameters.source_relation.attributes if a.included
+        ]
+        included_targets = [
+            a for a in parameters.target_relation.attributes if a.included
+        ]
 
         # Build the Cartesian product of source/target iterators per mode.
         # oneToN ("1-n"): iterate over each source, bundle all targets together.
@@ -156,7 +167,9 @@ def build_prompts(
 
         for src_list in sources_iter:
             for tgt_list in targets_iter:
-                messages = _render_messages(src_list, tgt_list, parameters, template)
+                messages = _render_messages(
+                    src_list, tgt_list, parameters, template
+                )
                 prompt_dict: Dict = {
                     "model": model,
                     "temperature": config["OPENAI_TEMPERATURE"],
@@ -244,8 +257,12 @@ def build_m2m_prompts(
         for a in parameters.target_relation.attributes
     ]
 
-    patched_src = dataclasses.replace(parameters.source_relation, attributes=src_attrs)
-    patched_tgt = dataclasses.replace(parameters.target_relation, attributes=tgt_attrs)
+    patched_src = dataclasses.replace(
+        parameters.source_relation, attributes=src_attrs
+    )
+    patched_tgt = dataclasses.replace(
+        parameters.target_relation, attributes=tgt_attrs
+    )
     patched_params = dataclasses.replace(
         parameters,
         source_relation=patched_src,
@@ -295,8 +312,12 @@ def build_relatedness_prompts(parameters: Parameters) -> List[Prompt]:
         "n": config["OPENAI_N"],
     }
 
-    included_sources = [a for a in parameters.source_relation.attributes if a.included]
-    included_targets = [a for a in parameters.target_relation.attributes if a.included]
+    included_sources = [
+        a for a in parameters.source_relation.attributes if a.included
+    ]
+    included_targets = [
+        a for a in parameters.target_relation.attributes if a.included
+    ]
 
     return [
         Prompt(

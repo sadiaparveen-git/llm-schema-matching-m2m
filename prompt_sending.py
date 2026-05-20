@@ -1,15 +1,13 @@
-"""Async prompt dispatcher for thesis-extension.
+"""Async prompt dispatcher.
 
-extract_json and is_valid_answer are copied verbatim from
-demo-repo/utils/prompt_sending.py (TECH_SPEC §3.3, D7).
+send_prompts() is the public entry point:
+returns mock Answers when QUERY_LLM=False,
+otherwise dispatches to the active LLMProvider
+via get_provider().
 
-send_prompts():
-  - Returns mock Answer objects when QUERY_LLM=False (no real API calls).
-  - Uses get_provider() factory to dispatch to the active LLMProvider.
-  - Records latency via LatencyTimer and writes a cost_log.jsonl row via
-    storage_json.log_cost() after every response.
-  - Uses logging (not print); all parse errors logged with exc_info=True.
-  - No bare except clauses.
+extract_json() and is_valid_answer() handle
+JSON extraction from LLM response text for
+1:1 matching templates.
 """
 from __future__ import annotations
 
@@ -33,7 +31,7 @@ _MOCK_ANSWER_TEXT = f"Mock LLM response (QUERY_LLM=False). Decision: {_MOCK_JSON
 
 
 # ---------------------------------------------------------------------------
-# Copied verbatim from demo-repo/utils/prompt_sending.py  (TECH_SPEC §3.3)
+# JSON extraction helpers for 1:1 matching responses
 # ---------------------------------------------------------------------------
 
 def extract_json(answer: Answer) -> Dict[str, Any]:

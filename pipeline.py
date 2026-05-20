@@ -1,19 +1,20 @@
-"""Two-phase schema matching pipeline (TECH_SPEC §6.1 + §6.2).
+"""Two-phase schema matching pipeline.
 
-schema_match() orchestrates Phase 1 (1:1 matching) and Phase 2 (M:M on
-residuals).  Results are cached to disk by Parameters digest so repeated
-calls with the same parameters are cheap.
+schema_match() orchestrates Phase 1 (1:1 matching)
+and Phase 2 (M:M on residuals). Results are cached
+to disk by Parameters digest so repeated calls with
+the same parameters are cheap.
 
-compute_residuals() identifies attributes whose best Phase-1 YES-vote ratio
-falls below a confidence threshold; those attributes feed Phase 2.
+compute_residuals() identifies attributes whose best
+Phase 1 YES-vote ratio falls below a confidence
+threshold; those attributes feed Phase 2.
 """
+
 from __future__ import annotations
 
 import logging
 from typing import Dict, List, Optional, Tuple
-
 from config import config
-from ground_truth import RelationshipType
 from models import (
     Attribute,
     AttributeGroupPair,
@@ -38,6 +39,7 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
+
 
 def schema_match(parameters: Parameters) -> Result:
     """Run the two-phase schema matching pipeline and return a Result.
@@ -74,15 +76,20 @@ def schema_match(parameters: Parameters) -> Result:
         modes=[PromptDesign.oneToN, PromptDesign.nToOne],
     )
     if len(prompts_p1) > 10:
+        n = (
+            config["ANTHROPIC_N"]
+            if config["LLM_PROVIDER"] == "anthropic"
+            else config["OPENAI_N"]
+        )
+        estimated_calls = len(prompts_p1) * n
         logger.warning(
             "Phase 1 generated %d prompts for %s->%s. "
-            "With ANTHROPIC_N=%d this means %d API calls. "
-            "Consider reducing ANTHROPIC_N for development.",
+            "With current n setting this means ~%d API calls. "
+            "Consider reducing OPENAI_N or ANTHROPIC_N in .env.",
             len(prompts_p1),
             parameters.source_relation.name,
             parameters.target_relation.name,
-            config["ANTHROPIC_N"],
-            len(prompts_p1) * config["ANTHROPIC_N"],
+            estimated_calls,
         )
     answers_p1 = send_prompts(parameters, prompts_p1)
     result = postprocess_answers(parameters, answers_p1)
@@ -118,7 +125,7 @@ def compute_residuals(
     An attribute is residual if its best YES-vote ratio across all 1:1 pairs
     is strictly below *threshold*.
 
-    Edge cases (TECH_SPEC §6.2):
+    Edge cases:
     - included=False  → never a residual, skipped unconditionally.
     - zero total votes → max_yes_ratio = 0.0 → treated as residual.
     - empty result.pairs → all included attributes are residuals.
@@ -159,6 +166,7 @@ def compute_residuals(
 # ---------------------------------------------------------------------------
 # Private helpers
 # ---------------------------------------------------------------------------
+
 
 def _find_attr(relation: Relation, name: str) -> Optional[Attribute]:
     """Return the Attribute with the given name from *relation*, or None."""
