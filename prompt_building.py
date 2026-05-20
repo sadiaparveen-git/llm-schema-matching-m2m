@@ -1,7 +1,7 @@
-"""Prompt construction for thesis-extension.
+"""Prompt construction
 
 build_prompts() renders the 1:1 prompt templates (oneToN, nToOne) following
-Marcel's attribute-iteration approach: one Prompt per source attribute for
+a per-attribute iteration approach: one Prompt per source attribute for
 oneToN mode, one per target attribute for nToOne mode.
 
 build_m2m_prompts() renders the manyToMany template — one prompt per relation
@@ -14,6 +14,7 @@ System-role messages are passed through natively (not flattened to user role).
 """
 from __future__ import annotations
 
+import dataclasses
 import functools
 import json
 import os
@@ -44,7 +45,7 @@ def _load_template(template_name: str) -> List[Dict[str, str]]:
 
 
 # ---------------------------------------------------------------------------
-# Template iteration (mirrors Marcel's template_iterator)
+# Template iteration
 # ---------------------------------------------------------------------------
 
 def _template_iterator(
@@ -83,7 +84,7 @@ def _render_messages(
     """Render template into a list of chat messages.
 
     System-role messages are passed through unchanged — no flattening to
-    user role (unlike Marcel's demo-repo, which made everything user-role).
+    user role.
     """
     env = Environment()
     messages = []
@@ -234,8 +235,6 @@ def build_m2m_prompts(
     residual_tgt_names = {a.name for a in residual_targets}
 
     # Build shallow-copy relations where only residual attrs are included.
-    import dataclasses
-
     src_attrs = [
         dataclasses.replace(a, included=(a.name in residual_src_names))
         for a in parameters.source_relation.attributes

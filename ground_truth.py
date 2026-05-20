@@ -54,10 +54,10 @@ class GTGroupEntry:
     relationship: RelationshipType
 
 
-# CamelCase OMOP relation name → underscore-separated name used in
-# actual-repo/schema_documentations/. Applied to the relation-name segment of
-# every source AND target path during loading. Any CamelCase token NOT listed
-# here triggers a ValueError at load time.
+# Maps CamelCase OMOP relation names to their
+# underscore-separated form used in schema
+# documentation files. Any CamelCase token not
+# listed here raises ValueError at load time.
 OMOP_NAME_NORMALIZATION = {
     "VisitOccurrence": "Visit_Occurrence",
     "DrugExposure": "Drug_Exposure",

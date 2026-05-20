@@ -135,9 +135,7 @@ class AnthropicProvider(LLMProvider):
     def _normalize_messages_for_anthropic(self, messages: List[Dict]) -> List[Dict]:
         """Merge consecutive user-role messages with '\\n\\n---\\n\\n' as delimiter.
 
-        Marcel's templates contain back-to-back user messages; the Anthropic
-        API requires strictly alternating user/assistant turns.  We merge
-        rather than inject fake assistant turns so the prompt semantics are
+        Some prompt templates contain back-to-back user messages; the Anthropic API requires strictly alternating user/assistant turns.  We merge rather than inject fake assistant turns so the prompt semantics are
         preserved.
         """
         normalized: List[Dict] = []

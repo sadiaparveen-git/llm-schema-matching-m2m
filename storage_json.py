@@ -1,4 +1,4 @@
-"""JSON file-based persistence for thesis-extension (replaces SQLite).
+"""
 
 Layout under config["RESULTS_DIR"]:
     parameters/<digest>.json     — one Parameters per file
