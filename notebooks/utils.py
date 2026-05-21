@@ -5,6 +5,7 @@ Provides:
 - RELATION_PAIRS: the 9 ground truth relation pairs
 - ALL_MIMIC_TABLES / ALL_OMOP_TABLES: all tables discoverable in schema_documentations/
 """
+
 from __future__ import annotations
 
 import os
@@ -35,19 +36,16 @@ from models import Attribute, Relation, Side  # noqa: E402
 # ---------------------------------------------------------------------------
 
 RELATION_PAIRS: List[Tuple[str, str, str, str]] = [
-    ("Patients",      "MIMIC", "Person",               "OMOP"),
+    ("Patients", "MIMIC", "Person", "OMOP"),
+    ("Admissions", "MIMIC", "Visit_Occurrence", "OMOP"),
+    ("Admissions", "MIMIC", "Death", "OMOP"),
+    ("Prescriptions", "MIMIC", "Drug_Exposure", "OMOP"),
+    ("Diagnoses_ICD", "MIMIC", "Condition_Occurrence", "OMOP"),
+    ("Transfers", "MIMIC", "Care_Site", "OMOP"),
+    ("Transfers", "MIMIC", "Visit_Detail", "OMOP"),
+    ("Admissions", "MIMIC", "Visit_Detail", "OMOP"),
+    ("Services", "MIMIC", "Visit_Detail", "OMOP"),
 ]
-# RELATION_PAIRS: List[Tuple[str, str, str, str]] = [
-#     ("Patients",      "MIMIC", "Person",               "OMOP"),
-#     ("Admissions",    "MIMIC", "Visit_Occurrence",      "OMOP"),
-#     ("Admissions",    "MIMIC", "Death",                 "OMOP"),
-#     ("Prescriptions", "MIMIC", "Drug_Exposure",         "OMOP"),
-#     ("Diagnoses_ICD", "MIMIC", "Condition_Occurrence",  "OMOP"),
-#     ("Transfers",     "MIMIC", "Care_Site",             "OMOP"),
-#     ("Transfers",     "MIMIC", "Visit_Detail",          "OMOP"),
-#     ("Admissions",    "MIMIC", "Visit_Detail",          "OMOP"),
-#     ("Services",      "MIMIC", "Visit_Detail",          "OMOP"),
-# ]
 
 # ---------------------------------------------------------------------------
 # All MIMIC tables present in schema_documentations/
@@ -136,7 +134,9 @@ _MOCK_ATTRS: dict = {
     ],
     "OMOP": [
         Attribute("person_id", "A unique OMOP person identifier."),
-        Attribute("visit_occurrence_id", "A unique OMOP visit occurrence identifier."),
+        Attribute(
+            "visit_occurrence_id", "A unique OMOP visit occurrence identifier."
+        ),
         Attribute("concept_id", "A standard OMOP concept identifier."),
     ],
 }
@@ -209,15 +209,21 @@ def load_relation(
     prefix_with_sep = prefix + "_"
     attributes = []
     for f in files:
-        attr_name = f.stem[len(prefix_with_sep):]
+        attr_name = f.stem[len(prefix_with_sep) :]
         description = f.read_text(encoding="utf-8").strip()
-        attributes.append(Attribute(name=attr_name, description=description or None))
+        attributes.append(
+            Attribute(name=attr_name, description=description or None)
+        )
 
     table_desc = _read_table_description(dir_path, schema, name)
-    return Relation(name=name, side=side, attributes=attributes, description=table_desc)
+    return Relation(
+        name=name, side=side, attributes=attributes, description=table_desc
+    )
 
 
-def _read_table_description(docs_dir: Path, schema: str, name: str) -> Optional[str]:
+def _read_table_description(
+    docs_dir: Path, schema: str, name: str
+) -> Optional[str]:
     """Read the table-level description file if present."""
     if schema.upper() == "MIMIC":
         table_file = docs_dir / f"mimic_table_{name.lower()}.txt"
@@ -231,9 +237,7 @@ def _read_table_description(docs_dir: Path, schema: str, name: str) -> Optional[
 def _mock_relation(name: str, schema: str, side: Side) -> Relation:
     """Return a minimal 3-attribute mock Relation for offline use."""
     base_attrs = _MOCK_ATTRS.get(schema.upper(), _MOCK_ATTRS["MIMIC"])
-    attrs = [
-        Attribute(a.name, f"[mock] {a.description}") for a in base_attrs
-    ]
+    attrs = [Attribute(a.name, f"[mock] {a.description}") for a in base_attrs]
     return Relation(
         name=name,
         side=side,

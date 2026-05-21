@@ -1,18 +1,27 @@
-"""Evaluation metrics for schema matching results (TECH_SPEC §6.6).
+"""Evaluation metrics for schema matching results.
 
-evaluate_against_ground_truth() computes precision/recall/F1 for both 1:1 and
-group (many-to-one / many-to-many) predictions against updated_ground_truth.csv.
+evaluate_against_ground_truth() computes
+precision, recall, and F1 for both 1:1 and
+group match predictions against
+updated_ground_truth.csv.
 
-NOTE: relationship types are semantic labels only — this module does NOT compute
-relationship classification accuracy.
+Relationship types are semantic labels only —
+this module does not compute relationship
+classification accuracy.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Dict, FrozenSet, Optional, Set, Tuple
 
 from config import config
-from ground_truth import GTGroupEntry, GTOneToOneEntry, MatchType, load_updated_ground_truth
+from ground_truth import (
+    GTGroupEntry,
+    GTOneToOneEntry,
+    MatchType,
+    load_updated_ground_truth,
+)
 from models import Result, ResultGroupPair, ResultPair, Vote
 
 # A PairKey represents any match as (frozenset of source attr names,
@@ -23,6 +32,7 @@ _PairKey = Tuple[FrozenSet[str], FrozenSet[str]]
 # ---------------------------------------------------------------------------
 # Report dataclass
 # ---------------------------------------------------------------------------
+
 
 @dataclass
 class EvaluationReport:
@@ -45,6 +55,7 @@ class EvaluationReport:
 # ---------------------------------------------------------------------------
 # Helper: precision / recall / F1
 # ---------------------------------------------------------------------------
+
 
 def _pr_f1(predicted: set, ground_truth: set) -> Tuple[float, float, float]:
     """Compute (precision, recall, F1) for exact-match prediction sets.
@@ -69,6 +80,7 @@ def _pr_f1(predicted: set, ground_truth: set) -> Tuple[float, float, float]:
 # Private scoring helpers
 # ---------------------------------------------------------------------------
 
+
 def _score_pair(rp: ResultPair) -> float:
     """YES votes / total votes for a 1:1 ResultPair."""
     if not rp.votes:
@@ -86,6 +98,7 @@ def _score_group(rgp: ResultGroupPair) -> float:
 # ---------------------------------------------------------------------------
 # Private path helpers
 # ---------------------------------------------------------------------------
+
 
 def _attr_name(path: str) -> str:
     """Extract the attribute name (last dot-segment) from a dotted path.
@@ -111,6 +124,7 @@ def _relation_name(path: str) -> str:
 # ---------------------------------------------------------------------------
 # Private set builders
 # ---------------------------------------------------------------------------
+
 
 def _predicted_1to1(result: Result, threshold: float) -> Set[_PairKey]:
     return {
@@ -152,6 +166,7 @@ def _gt_groups_set(entries: list[GTGroupEntry]) -> Set[_PairKey]:
 # Public API
 # ---------------------------------------------------------------------------
 
+
 def evaluate_against_ground_truth(
     result: Result,
     ground_truth_path: str,
@@ -189,9 +204,17 @@ def evaluate_against_ground_truth(
 
     # one_to_one: same as overall 1:1
     p_, r_, f_ = _pr_f1(pred_1to1, gt_1to1_s)
-    per_match_type[str(MatchType.one_to_one)] = {"precision": p_, "recall": r_, "f1": f_}
+    per_match_type[str(MatchType.one_to_one)] = {
+        "precision": p_,
+        "recall": r_,
+        "f1": f_,
+    }
 
-    for mt in (MatchType.many_to_one, MatchType.one_to_many, MatchType.many_to_many):
+    for mt in (
+        MatchType.many_to_one,
+        MatchType.one_to_many,
+        MatchType.many_to_many,
+    ):
         mt_gt = _gt_groups_set([e for e in gt_groups if e.match_type == mt])
         p_, r_, f_ = _pr_f1(pred_grp, mt_gt)
         per_match_type[str(mt)] = {"precision": p_, "recall": r_, "f1": f_}
@@ -203,7 +226,10 @@ def evaluate_against_ground_truth(
     for entry in gt_1to1:
         key = f"{_relation_name(entry.source)}->{_relation_name(entry.target)}"
         rp_gt.setdefault(key, set()).add(
-            (frozenset({_attr_name(entry.source)}), frozenset({_attr_name(entry.target)}))
+            (
+                frozenset({_attr_name(entry.source)}),
+                frozenset({_attr_name(entry.target)}),
+            )
         )
 
     for entry in gt_groups:
