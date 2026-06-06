@@ -165,10 +165,10 @@ class TestOneToOneEvaluation:
         report = evaluate_against_ground_truth(result, _GT_PATH)
         # Both predicted pairs are in GT → precision = 1.0
         assert report.precision_1to1 == pytest.approx(1.0)
-        # total_gt_1to1 = 35: the GT's 41 one_to_one rows deduplicate to 35 unique
-        # (attr_name, attr_name) pairs because subject_id→person_id appears 7 times.
-        assert report.total_gt_1to1 == 35
-        assert report.recall_1to1 == pytest.approx(2 / 35)
+        # total_gt_1to1 = 38: the GT's 44 one_to_one rows deduplicate to 38 unique
+        # (attr_name, attr_name) pairs after normalization.
+        assert report.total_gt_1to1 == 38
+        assert report.recall_1to1 == pytest.approx(2 / 38)
         assert report.f1_1to1 > 0.0
         assert report.total_predicted_1to1 == 2
 
@@ -221,10 +221,10 @@ class TestOneToOneEvaluation:
         })
         report = evaluate_against_ground_truth(result, _GT_PATH)
         # precision = 2/3 (2 TPs out of 3 predictions)
-        # recall = 2/35 (GT deduplicates to 35 unique pairs; see test_perfect_1to1_match)
+        # recall = 2/38 (GT deduplicates to 38 unique pairs; see test_perfect_1to1_match)
         assert report.precision_1to1 == pytest.approx(2 / 3)
-        assert report.recall_1to1 == pytest.approx(2 / 35)
-        expected_f1 = 2 * (2 / 3) * (2 / 35) / ((2 / 3) + (2 / 35))
+        assert report.recall_1to1 == pytest.approx(2 / 38)
+        expected_f1 = 2 * (2 / 3) * (2 / 38) / ((2 / 3) + (2 / 38))
         assert report.f1_1to1 == pytest.approx(expected_f1)
 
 
@@ -267,12 +267,12 @@ class TestGroupEvaluation:
         report = evaluate_against_ground_truth(result, _GT_PATH)
         # precision = 1/1 = 1.0 (only one group predicted)
         assert report.precision_group == pytest.approx(1.0)
-        # recall = 1/2 = 0.5 (2 GT group entries, 1 matched)
-        assert report.recall_group == pytest.approx(0.5)
-        # F1 = 2*1.0*0.5 / 1.5 = 2/3
-        assert report.f1_group == pytest.approx(2 / 3)
+        # recall = 1/3 (3 GT group entries, 1 matched)
+        assert report.recall_group == pytest.approx(1 / 3)
+        # F1 = 2*1.0*(1/3) / (1.0 + 1/3) = 0.5
+        assert report.f1_group == pytest.approx(0.5)
         assert report.total_predicted_group == 1
-        assert report.total_gt_group == 2
+        assert report.total_gt_group == 3
 
     def test_group_below_threshold_not_counted(self):
         """A group with score < 0.5 must not be a true positive."""
@@ -341,7 +341,7 @@ class TestPerRelationPair:
         result = Result(parameters=params)
         report = evaluate_against_ground_truth(result, _GT_PATH)
         keys = set(report.per_relation_pair.keys())
-        # GT has 9 relation pairs; all must appear
+        # GT has 11 relation pairs; all must appear
         assert "Patients->Person" in keys
         assert "Admissions->Visit_Occurrence" in keys
         assert "Admissions->Death" in keys
@@ -351,7 +351,9 @@ class TestPerRelationPair:
         assert "Transfers->Visit_Detail" in keys
         assert "Admissions->Visit_Detail" in keys
         assert "Services->Visit_Detail" in keys
-        assert len(keys) == 9
+        assert "Admissions->Person" in keys
+        assert "Admissions->Condition_Occurrence" in keys
+        assert len(keys) == 11
 
     def test_pair_with_no_predictions_has_zero_metrics(self):
         """Pairs not covered by the result have P=R=F1=0."""
@@ -448,8 +450,8 @@ class TestEdgeCases:
         assert report.f1_group == 0.0
         assert report.total_predicted_1to1 == 0
         assert report.total_predicted_group == 0
-        assert report.total_gt_1to1 == 35  # 41 raw one_to_one rows deduplicate to 35 unique pairs
-        assert report.total_gt_group == 2
+        assert report.total_gt_1to1 == 38  # 44 raw one_to_one rows deduplicate to 38 unique pairs
+        assert report.total_gt_group == 3
 
     def test_score_exactly_at_1to1_threshold_is_counted(self):
         """2/3 ≈ 0.6667 which is >= 0.66 → must be counted."""

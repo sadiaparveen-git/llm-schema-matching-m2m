@@ -76,8 +76,8 @@ class OpenAIProvider(LLMProvider):
         self._semaphore = asyncio.Semaphore(config["PARALLEL_OPENAI_REQUESTS"])
 
     @tenacity.retry(
-        stop=tenacity.stop_after_attempt(3),
-        wait=tenacity.wait_exponential(multiplier=1, min=15, max=60),
+        stop=tenacity.stop_after_attempt(5),
+        wait=tenacity.wait_exponential(multiplier=1, min=5, max=30),
         retry=tenacity.retry_if_exception_type(_OpenAIRateLimitError),
         reraise=True,
     )
