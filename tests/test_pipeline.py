@@ -24,7 +24,7 @@ from models import (
     Side,
     Vote,
 )
-from pipeline import compute_residuals, schema_match
+from pipeline import compute_residuals, schema_match, schema_match_with_prefilter
 
 
 # ---------------------------------------------------------------------------
@@ -344,3 +344,94 @@ class TestPhase2Disabled:
             "group_pairs must be empty when PHASE_2_ENABLED=False, "
             "even for the Patients/Person pair"
         )
+
+
+# ---------------------------------------------------------------------------
+# schema_match_with_prefilter tests
+# ---------------------------------------------------------------------------
+
+class TestSchemaMatchWithPrefilter:
+    def test_prefilter_disabled_delegates_to_schema_match(
+        self, isolated_results_dir, monkeypatch
+    ):
+        """When USE_RELATEDNESS_PREFILTER=False, behaves identically to schema_match."""
+        monkeypatch.setitem(config, "QUERY_LLM", False)
+        monkeypatch.setitem(config, "PHASE_2_ENABLED", True)
+        monkeypatch.setitem(config, "USE_RELATEDNESS_PREFILTER", False)
+        params = _patients_person_params()
+
+        result, skipped = schema_match_with_prefilter(params)
+
+        assert not skipped, "prefilter disabled must return skipped=False"
+        assert result.pairs, "pairs must be populated (same as schema_match)"
+
+    def test_prefilter_skips_unrelated_pair(
+        self, isolated_results_dir, monkeypatch
+    ):
+        """When prefilter enabled and LLM says unrelated, return empty Result + skipped=True."""
+        from models import RelationRelatednessResult
+        import pipeline as pipeline_module
+
+        monkeypatch.setitem(config, "QUERY_LLM", True)
+        monkeypatch.setitem(config, "USE_RELATEDNESS_PREFILTER", True)
+
+        # Stub build_relatedness_prompts to return a dummy list
+        monkeypatch.setattr(pipeline_module, "build_relatedness_prompts", lambda p: ["dummy"])
+
+        # Stub send_prompts to return a dummy answer
+        monkeypatch.setattr(pipeline_module, "send_prompts", lambda p, prompts: ["dummy_answer"])
+
+        # Stub postprocess_relatedness_answers to return related=False
+        unrelated = RelationRelatednessResult(
+            source_relation_name="Patients",
+            target_relation_name="Person",
+            related=False,
+            confidence="high",
+            reasoning="test stub",
+        )
+        monkeypatch.setattr(
+            pipeline_module, "postprocess_relatedness_answers", lambda a: [unrelated]
+        )
+
+        params = _patients_person_params()
+        result, skipped = schema_match_with_prefilter(params)
+
+        assert skipped, "must return skipped=True when LLM says unrelated"
+        assert result.pairs == {}, "result must be empty when pair is filtered"
+
+    def test_prefilter_matches_related_pair(
+        self, isolated_results_dir, monkeypatch
+    ):
+        """When prefilter enabled and LLM says related, run full pipeline (mock mode)."""
+        from models import RelationRelatednessResult
+        import pipeline as pipeline_module
+
+        monkeypatch.setitem(config, "QUERY_LLM", True)
+        monkeypatch.setitem(config, "USE_RELATEDNESS_PREFILTER", True)
+        monkeypatch.setitem(config, "PHASE_2_ENABLED", False)
+
+        # Stub relatedness layer to say related=True
+        monkeypatch.setattr(pipeline_module, "build_relatedness_prompts", lambda p: ["dummy"])
+        monkeypatch.setattr(pipeline_module, "send_prompts", lambda p, prompts: ["dummy_answer"])
+
+        related = RelationRelatednessResult(
+            source_relation_name="Patients",
+            target_relation_name="Person",
+            related=True,
+            confidence="high",
+            reasoning="test stub",
+        )
+        monkeypatch.setattr(
+            pipeline_module, "postprocess_relatedness_answers", lambda a: [related]
+        )
+
+        # Stub schema_match to avoid real LLM calls while QUERY_LLM=True
+        dummy_result = Result(parameters=_patients_person_params())
+        dummy_result.pairs["dummy"] = "dummy_pair"  # type: ignore[assignment]
+        monkeypatch.setattr(pipeline_module, "schema_match", lambda p: dummy_result)
+
+        params = _patients_person_params()
+        result, skipped = schema_match_with_prefilter(params)
+
+        assert not skipped, "must return skipped=False when LLM says related"
+        assert result.pairs, "must return the full schema_match result"

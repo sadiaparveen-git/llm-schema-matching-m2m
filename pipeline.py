@@ -28,8 +28,12 @@ from models import (
     ResultPair,
     Vote,
 )
-from prompt_building import build_m2m_prompts, build_prompts
-from prompt_postprocessing import postprocess_answers, postprocess_m2m_answers
+from prompt_building import build_m2m_prompts, build_prompts, build_relatedness_prompts
+from prompt_postprocessing import (
+    postprocess_answers,
+    postprocess_m2m_answers,
+    postprocess_relatedness_answers,
+)
 from prompt_sending import send_prompts
 import storage_json
 
@@ -113,6 +117,44 @@ def schema_match(parameters: Parameters) -> Result:
     storage_json.store_result(result)
     # Step 7
     return result
+
+
+def schema_match_with_prefilter(
+    parameters: Parameters,
+) -> Tuple[Result, bool]:
+    """Run schema_match with an optional relation-relatedness pre-filter.
+
+    When USE_RELATEDNESS_PREFILTER=True, asks the LLM whether the two
+    relations are semantically related before running the full pipeline.
+    If the LLM says they are NOT related, returns an empty Result and
+    skipped=True without incurring Phase 1/2 API costs.
+
+    When USE_RELATEDNESS_PREFILTER=False (default), delegates to
+    schema_match() unchanged and returns skipped=False.
+
+    Returns:
+        (result, skipped) where skipped=True means the pair was filtered out.
+    """
+    if not config["USE_RELATEDNESS_PREFILTER"]:
+        return schema_match(parameters), False
+
+    # In mock mode, skip the relatedness check and always proceed
+    if not config["QUERY_LLM"]:
+        return schema_match(parameters), False
+
+    prompts = build_relatedness_prompts(parameters)
+    answers = send_prompts(parameters, prompts)
+    parsed = postprocess_relatedness_answers(answers)
+
+    if parsed and not parsed[0].related:
+        logger.info(
+            "Relatedness pre-filter: %s->%s deemed unrelated — skipping matching",
+            parameters.source_relation.name,
+            parameters.target_relation.name,
+        )
+        return Result(parameters=parameters), True
+
+    return schema_match(parameters), False
 
 
 def compute_residuals(

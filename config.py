@@ -15,6 +15,7 @@ config = {
     "PHASE_1_CONFIDENCE": float(os.environ.get("PHASE_1_CONFIDENCE", "0.66")),
     "MATCH_SCORE_THRESHOLD": float(os.environ.get("MATCH_SCORE_THRESHOLD", "0.5")),
     "QUERY_LLM": os.environ.get("QUERY_LLM", "True").lower() == "true",
+    "USE_RELATEDNESS_PREFILTER": os.environ.get("USE_RELATEDNESS_PREFILTER", "False").lower() == "true",
     "OPENAI_N": int(os.environ.get("OPENAI_N", "3")),
     "ANTHROPIC_N": int(os.environ.get("ANTHROPIC_N", "1")),
     "OPENAI_TEMPERATURE": float(os.environ.get("OPENAI_TEMPERATURE", "1.0")),
